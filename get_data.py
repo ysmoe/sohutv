@@ -35,7 +35,6 @@ class GetVideoUrls(object):
         self.limit = limit
         self.video_urls_list = []
 
-
     def get_video_urls(self):
         """
         提取视频网址 直到满足limit限制

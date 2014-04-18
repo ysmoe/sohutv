@@ -9,6 +9,7 @@ def main():
     """
     开始抓取程序
     """
+
     url, limit = get_url_and_limit()
     print('url:', url, 'limit:', limit)
     url_getter = GetVideoUrls(url, limit)
@@ -25,6 +26,7 @@ def get_url_and_limit():
     返回：
         (url, limit) url为string limit为int
     """
+
     url = ''
     limit = 0
     if settings.DEBUG:

@@ -83,6 +83,7 @@ def db_connect():
 
     返回：连接的数据库引用
     """
+
     return create_engine(settings.DATABASE)
 
 
@@ -90,4 +91,5 @@ def create_table(engine):
     """
     根据models中定义的表结构 在数据库中创建表
     """
+
     Base.metadata.create_all(engine)

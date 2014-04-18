@@ -34,6 +34,7 @@ class InsertData(object):
         参数：
             item model 要插入的数据
         """
+
         session = self.Session()
         session.add(item)
         session.commit()
