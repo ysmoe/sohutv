@@ -55,7 +55,7 @@ class GetVideoUrls(object):
             self.video_page_queue.put(page)
         self.start_extract_video_urls()
         print('视频网址获取完成')
-        return self.video_urls_list[:self.limit]
+        return self.video_urls_list
 
 
     def get_total_page_urls(self, start_page):
@@ -260,14 +260,13 @@ class ExtractAndInsertVideoData(object):
 
         r = requests.get(video_url)
         try:
-            assert r.status_code == 200
-            r.encoding = 'gbk'
-            playlist_id = re.search(r'playlistId="(.*?)";', r.text).group(1)
-            vid = re.search(r'vid="(.*?)";', r.text).group(1)
-            return playlist_id, vid
-        except AssertionError as e:
+            if r.status_code == 200:
+                r.encoding = 'gbk'
+                playlist_id = re.search(r'playlistId="(.*?)";', r.text).group(1)
+                vid = re.search(r'vid="(.*?)";', r.text).group(1)
+                return playlist_id, vid
+        except:
             print('无法读取网页', video_url)
-            return False
 
     def parse_video_data(self, meta_data, video_url):
         """
@@ -286,36 +285,37 @@ class ExtractAndInsertVideoData(object):
             info = json.loads(r.text)
             extra_video_info = self.extra_video_info(info, video_url)
             vote_info = self.get_vote_info(meta_data)
-            temp_video = Video()
+            if vote_info:
+                temp_video = Video()
 
-            temp_video.name = extra_video_info['name']
-            temp_video.en_name = info['tvEnglishName']
-            temp_video.thumbnail = extra_video_info['largePicUrl']
-            temp_video.directors = str(info['directors'])
-            temp_video.actors = str(info['actors'])
-            temp_video.categories = str(info['categories'])
-            temp_video.description = info['albumDesc']
-            temp_video.page_url = video_url
+                temp_video.name = extra_video_info['name']
+                temp_video.en_name = info['tvEnglishName']
+                temp_video.thumbnail = extra_video_info['largePicUrl']
+                temp_video.directors = str(info['directors'])
+                temp_video.actors = str(info['actors'])
+                temp_video.categories = str(info['categories'])
+                temp_video.description = info['albumDesc']
+                temp_video.page_url = video_url
 
-            temp_video.album_name = info['albumName']
-            temp_video.album_thumbnail = info['largeVerPicUrl']
-            temp_video.album_page_url = info['albumPageUrl']
-            temp_video.default_page_url = info['defaultPageUrl']
+                temp_video.album_name = info['albumName']
+                temp_video.album_thumbnail = info['largeVerPicUrl']
+                temp_video.album_page_url = info['albumPageUrl']
+                temp_video.default_page_url = info['defaultPageUrl']
 
-            temp_video.playlist_id = meta_data[0]
-            temp_video.vid = meta_data[1]
-            temp_video.pid = info['pid']
+                temp_video.playlist_id = meta_data[0]
+                temp_video.vid = meta_data[1]
+                temp_video.pid = info['pid']
 
-            temp_video.update_time = info['updateTime']
-            temp_video.publish_year = info['publishYear']
-            temp_video.area = info['area']
-            temp_video.play_length = extra_video_info['playLength']
-            temp_video.publish_time = extra_video_info['publishTime']
+                temp_video.update_time = info['updateTime']
+                temp_video.publish_year = info['publishYear']
+                temp_video.area = info['area']
+                temp_video.play_length = extra_video_info['playLength']
+                temp_video.publish_time = extra_video_info['publishTime']
 
-            temp_video.up_vote = int(vote_info[0])
-            temp_video.down_vote = int(vote_info[1])
+                temp_video.up_vote = int(vote_info[0])
+                temp_video.down_vote = int(vote_info[1])
 
-            return temp_video
+                return temp_video
         else:
             print('无法读取网页', video_url)
 
@@ -348,13 +348,15 @@ class ExtractAndInsertVideoData(object):
         返回：
             (own_vote, up_vote) 均为int
         """
-
-        params = {'vid': meta_data[1], 'type': '1'}
-        r = requests.get('http://score.my.tv.sohu.com/digg/get.do', params=params)
-        vote = json.loads(r.text.strip()[1:-1])
-        down_vote = int(vote['downCount'])
-        up_vote = int(vote['upCount'])
-        return down_vote, up_vote
+        try:
+            params = {'vid': meta_data[1], 'type': '1'}
+            r = requests.get('http://score.my.tv.sohu.com/digg/get.do', params=params)
+            vote = json.loads(r.text.strip()[1:-1])
+            down_vote = int(vote['downCount'])
+            up_vote = int(vote['upCount'])
+            return down_vote, up_vote
+        except:
+            print('获取投票信息失败', r.url)
 
     def insert_data(self, parsed_video):
         """
