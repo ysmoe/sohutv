@@ -8,6 +8,6 @@ DATABASE 数据库连接参数
 THREAD_NUMBER 抓取视频的线程数
 """
 
-DEBUG = True
+DEBUG = False
 DATABASE = 'sqlite:///tv.db'
 THREAD_NUMBER = 10

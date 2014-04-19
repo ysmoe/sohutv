@@ -1,7 +1,9 @@
 #! /usr/bin/env python3
 
 import threading
+
 from sqlalchemy.orm import sessionmaker, scoped_session
+
 from models import db_connect, create_table
 
 

@@ -1,14 +1,19 @@
 #! /usr/bin/env python3
 
-import queue
-import re
+
+
 import ast
 import json
+import math
+import queue
+import re
 import requests
 import threading
+
 from bs4 import BeautifulSoup
 from insert_data import InsertData
 from models import Video
+
 import settings
 
 
@@ -19,6 +24,7 @@ class GetVideoUrls(object):
     属性：
         start_url string 开始抓取的网址
         limit int 抓取最大数量限制
+        video_page_queue queue 包含视频的页面地址队列
         video_urls_list list 存储所有获取到的视频网址
     """
 
@@ -33,6 +39,7 @@ class GetVideoUrls(object):
 
         self.start_url = start_url
         self.limit = limit
+        self.video_page_queue = queue.Queue()
         self.video_urls_list = []
 
     def get_video_urls(self):
@@ -43,34 +50,54 @@ class GetVideoUrls(object):
             self.video_urls_list list 所有获取到的视频网址
         """
 
-        next_page_url = self.start_url
-        while not self.is_enough_urls():
-            self.print_start_info(next_page_url)
-            parse = self.parse_url(next_page_url)
-            if parse:
-                self.add_current_page_video_urls(parse)
-                next_page_url = self.get_next_page_url(parse)
-                if not next_page_url:
-                    break
+        total_page_urls = self.get_total_page_urls(self.start_url)
+        for page in total_page_urls:
+            self.video_page_queue.put(page)
+        self.start_extract_video_urls()
         print('视频网址获取完成')
         return self.video_urls_list[:self.limit]
 
-    def is_enough_urls(self):
+
+    def get_total_page_urls(self, start_page):
         """
-        判断是否抓取到足够的视频网址
+        获取到所有满足limit限制的视频页面
+
+        参数:
+            start_page string 起始网址
 
         返回：
-            足够返回True 不足返回False
+            total_page_urls list 所有满足limit限制的视频页面
         """
 
-        if self.limit == 0:
-            return False
+        end_page_url = self.get_end_page_url()
+        if end_page_url:
+            end_page_number = self.split_url(end_page_url)[1]
+            begin_url, start_page_number, end_url = self.split_url(start_page)
+            grab_end_page = self.calculate_grab_end_page(start_page_number, end_page_number)
+            total_page_urls = []
+            for page in range(start_page_number, grab_end_page + 1):
+                total_page_urls.append(self.joint_url(begin_url, page, end_url))
+            return total_page_urls
         else:
-            return len(self.video_urls_list) > self.limit
+            return [start_page]
 
-    def print_start_info(self, page_url):
-        if settings.DEBUG:
-            print('getVideoUrl', page_url)
+    def get_end_page_url(self):
+        """
+        根据起始网址分析出此分类的末页地址
+
+        返回
+            若网页存在末页 返回end_page_url string
+            若不存在或与起始页相同 返回False
+        """
+
+        parse = self.parse_url(self.start_url)
+        end_page_tag = parse.select('div.num a')[-1]
+        end_page_relative_url = re.search(r'href="(.*?)"', str(end_page_tag)).group(1)
+        base_url = self.start_url.split('/')[2]
+        end_page_url = 'http://' + base_url + end_page_relative_url
+        start_page_number = self.split_url(self.start_url)[1]
+        end_page_number = self.split_url(end_page_url)[1]
+        return end_page_url if end_page_number > start_page_number else False
 
     def parse_url(self, page_url):
         """
@@ -81,6 +108,7 @@ class GetVideoUrls(object):
             若出现异常 返回False
         """
 
+        print('parse_url', page_url)
         r = requests.get(page_url)
         try:
             assert r.status_code == 200
@@ -90,42 +118,84 @@ class GetVideoUrls(object):
             print('无法读取网页', page_url)
             return False
 
-    def add_current_page_video_urls(self, parse):
+    def split_url(self, page_url):
         """
-        提取当前页面的视频网址 将网址加入self.video_urls_list
+        分割网址 提取需要的信息
 
         参数：
-            parse parse Beautifulsoup处理过的网页
+            page_url string 要分割的网址
+
+        返回：
+            begin_url, page_number, end_url  前半部分网址(string) 页码(int) 后半部分网址(string)
         """
 
-        video_div_list = parse.select('div.info')
-        temp_video_link_list = []
-        for video_div in video_div_list:
-            url = re.search(r'href="(.*?)"', str(video_div)).group(1)
-            temp_video_link_list.append(url)
-        self.video_urls_list.extend(temp_video_link_list)
+        begin_url = re.search(r'(^.*p10)(\d*)(_p\d*\.html$)', page_url).group(1)
+        page_number = re.search(r'(^.*p10)(\d*)(_p\d*\.html$)', page_url).group(2)
+        end_url = re.search(r'(^.*p10)(\d*)(_p\d*\.html$)', page_url).group(3)
+        return begin_url, int(page_number), end_url
 
-    def get_next_page_url(self, parse):
+    def calculate_grab_end_page(self, start_page_number, end_page_number):
         """
-        提取页面的下一页地址
+        计算出抓取页面的结束页码
+
+        参数:
+            start_page_number int 起始页码
+            end_page_number int 视频末页页码
+
+        返回:
+            end_page_number int 要抓取的结束页码
+        """
+
+        if self.limit:
+            temp_end_page_number = start_page_number + math.ceil(self.limit / 20) - 1
+            return temp_end_page_number if temp_end_page_number < end_page_number else end_page_number
+        else:
+            return end_page_number
+
+    def joint_url(self, begin_url, page, end_url):
+        """
+        拼接网址
 
         参数：
-            parse parse Beautifulsoup处理过的网页
+            begin_url string 前半部分网址
+            page int 页码
+            end——url string 后半部分网址
 
-        返回
-            若网页存在下一页 返回next_page_url string
-            若不存在 返回False
+        返回：
+            jointed_url string 拼接后的网址
         """
 
-        try:
-            next_page_tag = parse.select('a.next')
-            next_page_relative_url = re.search(r'href="(.*?)"', str(next_page_tag)).group(1)
-            base_url = self.start_url.split('/')[2]
-            next_page_url = 'http://' + base_url + next_page_relative_url
-            return next_page_url
-        except:
-            print('已到达末页', self.url)
-            return False
+        jointed_url = begin_url + str(page) + end_url
+        return jointed_url
+
+    def start_extract_video_urls(self):
+        """
+        开始从视频页面提取单独的视频地址
+        """
+
+        th = []
+        for i in range(settings.THREAD_NUMBER):
+            t = threading.Thread(target=self.add_current_page_video_urls)
+            t.start()
+            th.append(t)
+        for t in th:
+            t.join()
+
+    def add_current_page_video_urls(self):
+        """
+        提取视频页面内的视频网址 将网址加入self.video_urls_list
+        """
+
+        while not self.video_page_queue.empty():
+            current_page = self.video_page_queue.get()
+            parse = self.parse_url(current_page)
+            video_div_list = parse.select('div.info')
+            temp_video_link_list = []
+            for video_div in video_div_list:
+                url = re.search(r'href="(.*?)"', str(video_div)).group(1)
+                temp_video_link_list.append(url)
+            self.video_urls_list.extend(temp_video_link_list)
+            self.video_page_queue.task_done()
 
 
 class ExtractAndInsertVideoData(object):
