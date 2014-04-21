@@ -9,6 +9,7 @@ import queue
 import re
 import requests
 import threading
+import time
 
 from bs4 import BeautifulSoup
 from insert_data import InsertData
@@ -205,6 +206,8 @@ class ExtractAndInsertVideoData(object):
     属性：
         insert_data_class InsertData的实例 负责插入数据
         video_queue queue 存储视频网址
+        terminate_thread bool 线程是否应该结束
+        threads_list list 所有开始的线程
     """
 
     def __init__(self, video_urls_list):
@@ -217,28 +220,36 @@ class ExtractAndInsertVideoData(object):
 
         self.insert_data_class = InsertData()
         self.video_queue = queue.Queue()
+        self.terminate_thread = False
         for url in video_urls_list:
             self.video_queue.put(url)
+
+    def set_terminate_thread(self):
+        self.terminate_thread = True
 
     def start_threads(self):
         """
         创建线程 开始抓取并插入数据
         """
 
-        threads_list = []
+        self.threads_list = []
         for t in range(settings.THREAD_NUMBER):
             t = threading.Thread(target=self.extract_insert_video_data)
-            threads_list.append(t)
+            self.threads_list.append(t)
             t.start()
-        for t in threads_list:
-            t.join()
+        while True:
+            alive_threads = list(filter(lambda x: x.is_alive(), self.threads_list))
+            if not len(alive_threads):
+                break
+            else:
+                time.sleep(1)
 
     def extract_insert_video_data(self):
         """
         提取并插入视频数据
         """
 
-        while not self.video_queue.empty():
+        while not self.video_queue.empty() and not self.terminate_thread:
             video_url = self.video_queue.get()
             meta_data = self.get_playlistId_and_vid(video_url)
             if meta_data:
